@@ -1,3 +1,7 @@
+Written for this pattern(from wikipedia):
+
+![bitonic sort](https://raw.githubusercontent.com/tugrul512bit/cuda_bitonic_sort_test/master/BitonicSort1.svg.png)
+
 -test codes for sorting 64M float keys
 -only kernel codes. uses 1 float array to sort in-place.
 -uses dynamic parallelism feature of cuda

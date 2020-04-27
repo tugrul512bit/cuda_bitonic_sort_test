@@ -4,7 +4,7 @@
     // array size needs to be integer power of 2
     // arary size needs to be at least 8192
     // benchmark data:
-    /*
+    
     
     Array elements  GT1030		    std::sort 	        GTX1080ti 
                     (benchmark)   (1 core )             (guesstimate)
@@ -33,7 +33,7 @@
     4GB RAM 1333MHz
     (single channel DDR3)
     
-    */
+    
     const int n = 67108864; // 64M elements
     const int l2n= 26;  // log2(n)
     

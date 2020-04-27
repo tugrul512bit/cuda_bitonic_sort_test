@@ -1,6 +1,8 @@
     // test codes for sorting 64M float keys
     // only kernel codes. uses 1 float array to sort in-place.
     // uses dynamic parallelism feature of cuda
+    // array size needs to be integer power of 2
+    // arary size needs to be at least 8192
     // benchmark data:
     /*
     

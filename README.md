@@ -12,7 +12,7 @@ benchmark data:
     2048            not applicable                      -
     4096            not applicable                      -
     8192            363     µs      114     µs          -
-    16k             463     ms	    248     µs          -
+    16k             463     ms      248     µs          -
     32k             746     µs      536     µs          -
     64k             1.23    ms      1.15    ms          -
     128k            2.32    ms      2.46    ms          -

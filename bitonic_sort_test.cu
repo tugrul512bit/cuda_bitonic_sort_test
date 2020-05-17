@@ -41,15 +41,15 @@
     // shared memory per block, also number of work per block (2048=minimum, 4096=moderate, 8192=maximum).
     const int sharedSize= 8192; 
     const int l22k= 13; // log2(sharedSize)
-    __device__ void compareSwap(float & var1, float &var2, float dir)
+    __device__ void compareSwap(float & var1, float &var2, bool dir)
     {
-    	 if(var1>var2 && dir>0.5f)
+    	 if(var1>var2 && dir)
          {                
                 float tmp = var1;
                 var1=var2;
                 var2=tmp;         
          }
-         else if(var1<var2 && dir<0.5f)
+         else if(var1<var2 && !dir)
          {
                 float tmp = var1;
                 var1=var2;
@@ -59,7 +59,7 @@
     __global__ void computeBox(float * __restrict__ data, const int boxSize, const int leapSize)
     {
     	  const int index = (threadIdx.x + blockIdx.x*blockDim.x);
-    	  const float dir = ((index%boxSize)<(boxSize/2));
+    	  const bool dir = ((index%boxSize)<(boxSize/2));
     	  const int indexOffset = (index / leapSize)*leapSize;
     	  
     	  compareSwap(data[index+indexOffset],data[index+indexOffset+leapSize],dir);
@@ -67,7 +67,7 @@
     __global__ void computeBoxForward(float * __restrict__ data, const int boxSize, const int leapSize)
     {
     	  const int index = (threadIdx.x + blockIdx.x*blockDim.x);
-    	  const float dir = true;
+    	  const bool dir = true;
     	  const int indexOffset = (index / leapSize)*leapSize;
     	  
     	  compareSwap(data[index+indexOffset],data[index+indexOffset+leapSize],dir);
@@ -75,7 +75,7 @@
     __global__ void computeBoxShared(float * __restrict__ data, const int boxSize, const int leapSize, const int work)
     {
     	  const int index = threadIdx.x+work*1024;
-    	  const float dir = ((index%boxSize)<(boxSize/2));
+    	  const bool dir = ((index%boxSize)<(boxSize/2));
     	  const int indexOffset = (index / leapSize)*leapSize;
     	  
     	  compareSwap(data[index+indexOffset],data[index+indexOffset+leapSize],dir);
@@ -83,7 +83,7 @@
     __global__ void computeBoxForwardShared(float * __restrict__ data, const int boxSize, const int leapSize, const int work)
     {
     	  const int index = threadIdx.x + work*1024;
-    	  const float dir = true;
+    	  const bool dir = true;
     	  const int indexOffset = (index / leapSize)*leapSize;
     	  
     	  compareSwap(data[index+indexOffset],data[index+indexOffset+leapSize],dir);
@@ -145,7 +145,7 @@
             {
     			const int index = threadIdx.x+work*1024;
     			const int index2 = threadIdx.x+work*1024+blockIdx.x*blockDim.x*nWork;
-    			const float dir = ((index2%boxSizeP)<(boxSizeP/2));
+    			const bool dir = ((index2%boxSizeP)<(boxSizeP/2));
     			const int indexOffset = (index / leapSize)*leapSize;
     			
     			compareSwap(sm[index+indexOffset],sm[index+indexOffset+leapSize],dir);

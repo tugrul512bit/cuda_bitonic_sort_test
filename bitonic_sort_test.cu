@@ -25,7 +25,7 @@
     8M			187 ms		  		211  ms			~47 + 14	ms
     16M			407 ms		  		451  ms			~95 + 32	ms
     32M			883 ms		  		940  ms			~190+ 70	ms
-    64M			1.93 s		  		2.0  s		    	~380+ 150	ms            135 ms kernel -- 75% of max VRAM bandwidth is used (364GB/s) 
+    64M			1.93 s		  		2.0  s		    	~380+ 150	ms            119 ms kernel -- 75% of max VRAM bandwidth is used (364GB/s) 
     (float keys)    (copy+kernel )			(copy + kernel)
 
     pcie v2.0 4x: 1.4GB/s

@@ -6,7 +6,7 @@
     // benchmark data:
     
     /*
-    Array elements  GT1030		    std::sort 	        GTX1080ti 
+    Array elements  GT1030		    std::sort 	        GTX1080ti            RTX4070(from nsight-compute profiler) 
                     (benchmark)   (1 core )             (guesstimate)
                     (no overclock)
     1024            not applicable                            -
@@ -25,7 +25,7 @@
     8M			    187	    ms		  211 ms		~47 + 14	ms
     16M			    407	    ms		  451 ms		~95 + 32	ms
     32M			    883	    ms		  940	ms		~190+ 70	ms
-    64M			    1.93	s		  2.0 s		    ~380+ 150	ms
+    64M			    1.93	s		  2.0 s		    ~380+ 150	ms            135 ms kernel -- 75% of max VRAM bandwidth is used (364GB/s) 
     (float keys)    (copy+kernel )			(copy + kernel)
                                             (using same pcie)
     pcie v2.0 4x: 1.4GB/s
@@ -33,161 +33,213 @@
     4GB RAM 1333MHz
     (single channel DDR3)
     */
-    
-    const int n = 67108864; // 64M elements
-    const int l2n= 26;  // log2(n)
-    
-    
-    // shared memory per block, also number of work per block (2048=minimum, 4096=moderate, 8192=maximum).
-    const int sharedSize= 8192; 
-    const int l22k= 13; // log2(sharedSize)
-    __device__ void compareSwap(float & var1, float &var2, bool dir)
+
+#ifndef __CUDACC__
+#define __CUDACC__
+#endif
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
+#include <cuda_device_runtime_api.h>
+#include <device_functions.h>
+
+__global__ void kernel(char * data)
+{
+	if (threadIdx.x == 0)
+		data[0] += 35;
+}
+
+// hello-world type test
+int test()
+{
+    char* dvc;
+	cudaMalloc<char>(&dvc, 1);
+	char hst=30;
+	cudaMemcpy(dvc, &hst, 1, ::cudaMemcpyHostToDevice);
+	kernel<<<64, 64 >>> (dvc);	
+	cudaMemcpy(&hst, dvc, 1, ::cudaMemcpyDeviceToHost);
+	return hst;
+}
+
+
+// bitonic-sort
+const int n = 67108864; // 64M elements
+const int l2n = 26;  // log2(n)
+
+
+// shared memory per block, also number of work per block (2048=minimum, 4096=moderate, 8192=maximum).
+const int sharedSize = 8192;
+const int l22k = 13; // log2(sharedSize)
+__device__ void compareSwap(float& var1, float& var2, bool dir)
+{
+    if (var1 > var2 && dir)
     {
-    	 if(var1>var2 && dir)
-         {                
-                float tmp = var1;
-                var1=var2;
-                var2=tmp;         
-         }
-         else if(var1<var2 && !dir)
-         {
-                float tmp = var1;
-                var1=var2;
-                var2=tmp;   
-         }
+        float tmp = var1;
+        var1 = var2;
+        var2 = tmp;
     }
-    __global__ void computeBox(float * __restrict__ data, const int boxSize, const int leapSize)
+    else if (var1 < var2 && !dir)
     {
-    	  const int index = (threadIdx.x + blockIdx.x*blockDim.x);
-    	  const bool dir = ((index%boxSize)<(boxSize/2));
-    	  const int indexOffset = (index / leapSize)*leapSize;
-    	  
-    	  compareSwap(data[index+indexOffset],data[index+indexOffset+leapSize],dir);
+        float tmp = var1;
+        var1 = var2;
+        var2 = tmp;
     }
-    __global__ void computeBoxForward(float * __restrict__ data, const int boxSize, const int leapSize)
+}
+__global__ void computeBox(float* __restrict__ data, const int boxSize, const int leapSize)
+{
+    const int index = (threadIdx.x + blockIdx.x * blockDim.x);
+    const bool dir = ((index % boxSize) < (boxSize / 2));
+    const int indexOffset = (index / leapSize) * leapSize;
+
+    compareSwap(data[index + indexOffset], data[index + indexOffset + leapSize], dir);
+}
+__global__ void computeBoxForward(float* __restrict__ data, const int boxSize, const int leapSize)
+{
+    const int index = (threadIdx.x + blockIdx.x * blockDim.x);
+    const bool dir = true;
+    const int indexOffset = (index / leapSize) * leapSize;
+
+    compareSwap(data[index + indexOffset], data[index + indexOffset + leapSize], dir);
+}
+__device__ void computeBoxShared(float* __restrict__ data, const int boxSize, const int leapSize, const int work)
+{
+    const int index = threadIdx.x + work * 1024;
+    const bool dir = ((index % boxSize) < (boxSize / 2));
+    const int indexOffset = (index / leapSize) * leapSize;
+
+    compareSwap(data[index + indexOffset], data[index + indexOffset + leapSize], dir);
+}
+__device__ void computeBoxForwardShared(float* __restrict__ data, const int boxSize, const int leapSize, const int work)
+{
+    const int index = threadIdx.x + work * 1024;
+    const bool dir = true;
+    const int indexOffset = (index / leapSize) * leapSize;
+
+    compareSwap(data[index + indexOffset], data[index + indexOffset + leapSize], dir);
+}
+__global__ void bitonicSharedSort(float* __restrict__ data)
+{
+    const int offset = blockIdx.x * sharedSize;
+    __shared__ float sm[sharedSize];
+    const int nCopy = sharedSize / 1024;
+    const int nWork = sharedSize / 2048;
+    for (int i = 0; i < nCopy; i++)
     {
-    	  const int index = (threadIdx.x + blockIdx.x*blockDim.x);
-    	  const bool dir = true;
-    	  const int indexOffset = (index / leapSize)*leapSize;
-    	  
-    	  compareSwap(data[index+indexOffset],data[index+indexOffset+leapSize],dir);
+        sm[threadIdx.x + i * 1024] = data[threadIdx.x + offset + i * 1024];
     }
-    __global__ void computeBoxShared(float * __restrict__ data, const int boxSize, const int leapSize, const int work)
+    __syncthreads();
+    int boxSize = 2;
+    for (int i = 0; i < l22k - 1; i++)
     {
-    	  const int index = threadIdx.x+work*1024;
-    	  const bool dir = ((index%boxSize)<(boxSize/2));
-    	  const int indexOffset = (index / leapSize)*leapSize;
-    	  
-    	  compareSwap(data[index+indexOffset],data[index+indexOffset+leapSize],dir);
-    }
-    __global__ void computeBoxForwardShared(float * __restrict__ data, const int boxSize, const int leapSize, const int work)
-    {
-    	  const int index = threadIdx.x + work*1024;
-    	  const bool dir = true;
-    	  const int indexOffset = (index / leapSize)*leapSize;
-    	  
-    	  compareSwap(data[index+indexOffset],data[index+indexOffset+leapSize],dir);
-    }
-    __global__ void bitonicSharedSort(float * __restrict__ data)
-    {
-         const int offset = blockIdx.x * sharedSize;
-         __shared__ float sm[sharedSize];
-         const int nCopy = sharedSize / 1024;
-         const int nWork = sharedSize / 2048;
-         for(int i=0;i<nCopy;i++)
-         {
-    		 sm[threadIdx.x+i*1024]      = data[threadIdx.x+offset+i*1024];
-         }
-         __syncthreads();
-    	 int boxSize = 2;
-    	 for(int i=0;i<l22k-1;i++)
-    	 {                       
-    		   for(int leapSize = boxSize/2;leapSize>0;leapSize /= 2)
-    		   {                             
-                    for(int work=0;work<nWork;work++)
-                    {                  
-    				    computeBoxShared(sm,boxSize,leapSize,work);
-                    }                          
-    				__syncthreads();
-    		   }
-    		   boxSize*=2;
-    	 }
-    	 
-    	 for(int leapSize = boxSize/2;leapSize>0;leapSize /= 2)
-    	 {           
-               for(int work=0;work<nWork;work++)
-               {         
-    		       computeBoxForwardShared(sm,boxSize,leapSize,work);
-               }                 
-    		   __syncthreads();     
-    	 }
-           
-         for(int i=0;i<nCopy;i++)
-         {
-               data[threadIdx.x+offset+i*1024] = sm[threadIdx.x+i*1024];               		      
-         }
-    }
-    __global__ void bitonicSharedMergeLeaps(float * __restrict__ data, const int boxSizeP, const int leapSizeP)
-    {
-         const int offset = blockIdx.x * sharedSize;
-         __shared__ float sm[sharedSize];
-         const int nCopy = sharedSize / 1024;
-         const int nWork = sharedSize / 2048;
-         for(int i=0;i<nCopy;i++)
-         {
-    		 sm[threadIdx.x+i*1024] = data[threadIdx.x+offset+i*1024];		 
-         }
-         __syncthreads();
-    		
-    	for(int leapSize = leapSizeP;leapSize>0;leapSize /= 2)
-    	{                                               
-            for(int work=0;work<nWork;work++)
+        for (int leapSize = boxSize / 2; leapSize > 0; leapSize /= 2)
+        {
+            for (int work = 0; work < nWork; work++)
             {
-    			const int index = threadIdx.x+work*1024;
-    			const int index2 = threadIdx.x+work*1024+blockIdx.x*blockDim.x*nWork;
-    			const bool dir = ((index2%boxSizeP)<(boxSizeP/2));
-    			const int indexOffset = (index / leapSize)*leapSize;
-    			
-    			compareSwap(sm[index+indexOffset],sm[index+indexOffset+leapSize],dir);
-            }                          
-    		__syncthreads();
-    	}
-    	
-    	for(int i=0;i<nCopy;i++)
-    	{
-    	    data[threadIdx.x+offset+i*1024] = sm[threadIdx.x+i*1024];               		 	    
+                computeBoxShared(sm, boxSize, leapSize, work);
+            }
+            __syncthreads();
         }
+        boxSize *= 2;
     }
-    
-    // launch this with 1 cuda thread
-    // dynamic parallelism = needs something newer than cc v3.0
-    extern "C"
-    __global__ void bitonicSort(float * __restrict__ data)
-    {     
-         bitonicSharedSort<<<(n/sharedSize),1024>>>(data);
-    	 int boxSize = sharedSize;
-    	 for(int i=l22k-1;i<l2n-1;i++)
-    	 {
-                   if(boxSize>sharedSize)
-                   {
-    				   int leapSize= boxSize/2;
-    				   for(;leapSize>sharedSize/2;leapSize /= 2)
-    				   {                                               
-    					  computeBox<<<(n/1024)/2,1024>>>(data,boxSize,leapSize);                          											  
-    				   }
-                       bitonicSharedMergeLeaps<<<(n/sharedSize),1024>>>(data,boxSize, leapSize);
-                   }
-                   else
-                   {
-                      bitonicSharedMergeLeaps<<<(n/sharedSize),1024>>>(data,boxSize, sharedSize/2);
-                   }
-    		   boxSize*=2;
-    	 }
-    	 
-    	 for(int leapSize = boxSize/2;leapSize>0;leapSize /= 2)
-    	 {                    
-    		   computeBoxForward<<<(n/1024)/2,1024>>>(data,boxSize,leapSize);                 
-    		                             
-    	 }       
-         cudaDeviceSynchronize();          		  
-    }	
+
+    for (int leapSize = boxSize / 2; leapSize > 0; leapSize /= 2)
+    {
+        for (int work = 0; work < nWork; work++)
+        {
+            computeBoxForwardShared(sm, boxSize, leapSize, work);
+        }
+        __syncthreads();
+    }
+
+    for (int i = 0; i < nCopy; i++)
+    {
+        data[threadIdx.x + offset + i * 1024] = sm[threadIdx.x + i * 1024];
+    }
+}
+__global__ void bitonicSharedMergeLeaps(float* __restrict__ data, const int boxSizeP, const int leapSizeP)
+{
+    const int offset = blockIdx.x * sharedSize;
+    __shared__ float sm[sharedSize];
+    const int nCopy = sharedSize / 1024;
+    const int nWork = sharedSize / 2048;
+    for (int i = 0; i < nCopy; i++)
+    {
+        sm[threadIdx.x + i * 1024] = data[threadIdx.x + offset + i * 1024];
+    }
+    __syncthreads();
+
+    for (int leapSize = leapSizeP; leapSize > 0; leapSize /= 2)
+    {
+        for (int work = 0; work < nWork; work++)
+        {
+            const int index = threadIdx.x + work * 1024;
+            const int index2 = threadIdx.x + work * 1024 + blockIdx.x * blockDim.x * nWork;
+            const bool dir = ((index2 % boxSizeP) < (boxSizeP / 2));
+            const int indexOffset = (index / leapSize) * leapSize;
+
+            compareSwap(sm[index + indexOffset], sm[index + indexOffset + leapSize], dir);
+        }
+        __syncthreads();
+    }
+
+    for (int i = 0; i < nCopy; i++)
+    {
+        data[threadIdx.x + offset + i * 1024] = sm[threadIdx.x + i * 1024];
+    }
+}
+
+// launch this with 1 cuda thread
+// dynamic parallelism = needs something newer than cc v3.0
+
+__global__ void bitonicSort(float* __restrict__ data)
+{
+    bitonicSharedSort << <(n / sharedSize), 1024 >> > (data);
+    int boxSize = sharedSize;
+    for (int i = l22k - 1; i < l2n - 1; i++)
+    {
+        if (boxSize > sharedSize)
+        {
+            int leapSize = boxSize / 2;
+            for (; leapSize > sharedSize / 2; leapSize /= 2)
+            {
+                computeBox <<<(n / 1024) / 2, 1024 >>> (data, boxSize, leapSize);
+            }
+            bitonicSharedMergeLeaps <<<(n / sharedSize), 1024 >>> (data, boxSize, leapSize);
+        }
+        else
+        {
+            bitonicSharedMergeLeaps <<<(n / sharedSize), 1024 >>> (data, boxSize, sharedSize / 2);
+        }
+        boxSize *= 2;
+    }
+
+    for (int leapSize = boxSize / 2; leapSize > 0; leapSize /= 2)
+    {
+        computeBoxForward <<<(n / 1024) / 2, 1024 >>> (data, boxSize, leapSize);
+
+    }
+    //cudaDeviceSynchronize(); <-- says deprecated in device code
+}
+
+#include<vector>
+#include<iostream>
+void test2()
+{
+    float* dvc;
+    cudaMalloc<float>(&dvc, n * sizeof(float));
+    std::vector<float> hst(n);
+    for (int i = 0; i < n; i++)
+    {
+        hst[i] = n - i;
+    }
+    cudaMemcpy(dvc, hst.data(), n * sizeof(float), ::cudaMemcpyHostToDevice);
+    bitonicSort <<<1, 1 >>> (dvc);
+    cudaMemcpy(hst.data(), dvc, n * sizeof(float), ::cudaMemcpyDeviceToHost);
+    std::cout << hst[100] << std::endl;
+}
+
+int main()
+{
+    test2();
+	return 0;
+}

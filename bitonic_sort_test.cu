@@ -1,8 +1,9 @@
     // test codes for sorting 64M float keys
-    // only kernel codes. uses 1 float array to sort in-place.
+    // uses float array to sort in-place.
     // uses dynamic parallelism feature of cuda
     // array size needs to be integer power of 2
     // arary size needs to be at least 8192
+    // repeats for 10 times and writes total time (and 100th element after sort that is 101)
     // benchmark data:
     
     /*
@@ -25,7 +26,7 @@
     8M			187 ms		  		211  ms			~47 + 14	ms
     16M			407 ms		  		451  ms			~95 + 32	ms
     32M			883 ms		  		940  ms			~190+ 70	ms
-    64M			1.93 s		  		2.0  s		    	~380+ 150	ms            119 ms kernel -- 75% of max VRAM bandwidth is used (364GB/s) 
+    64M			1.93 s		  		2.0  s		    	~380+ 150	ms            	119 ms kernel, 21 ms buffer copy (pinned buffers)
     (float keys)    (copy+kernel )			(copy + kernel)
 
     pcie v2.0 4x: 1.4GB/s
@@ -33,7 +34,6 @@
     4GB RAM 1333MHz
     (single channel DDR3)
     */
-
 #ifndef __CUDACC__
 #define __CUDACC__
 #endif
@@ -193,7 +193,9 @@ __global__ void bitonicSharedMergeLeaps(float* __restrict__ data, const int boxS
 
 __global__ void bitonicSort(float* __restrict__ data)
 {
-    bitonicSharedSort << <(n / sharedSize), 1024 >> > (data);
+    cudaStream_t stream0;
+    cudaStreamCreateWithFlags(&stream0, cudaStreamNonBlocking);
+    bitonicSharedSort <<<(n / sharedSize), 1024,0,stream0 >>> (data);
     int boxSize = sharedSize;
     for (int i = l22k - 1; i < l2n - 1; i++)
     {
@@ -202,23 +204,28 @@ __global__ void bitonicSort(float* __restrict__ data)
             int leapSize = boxSize / 2;
             for (; leapSize > sharedSize / 2; leapSize /= 2)
             {
-                computeBox <<<(n / 1024) / 2, 1024 >>> (data, boxSize, leapSize);
+                computeBox <<<(n / 1024) / 2, 1024, 0, stream0 >>> (data, boxSize, leapSize);
             }
-            bitonicSharedMergeLeaps <<<(n / sharedSize), 1024 >>> (data, boxSize, leapSize);
+            bitonicSharedMergeLeaps <<<(n / sharedSize), 1024, 0, stream0 >>> (data, boxSize, leapSize);
         }
         else
         {
-            bitonicSharedMergeLeaps <<<(n / sharedSize), 1024 >>> (data, boxSize, sharedSize / 2);
+            bitonicSharedMergeLeaps <<<(n / sharedSize), 1024, 0, stream0 >>> (data, boxSize, sharedSize / 2);
         }
         boxSize *= 2;
     }
 
+
     for (int leapSize = boxSize / 2; leapSize > 0; leapSize /= 2)
     {
-        computeBoxForward <<<(n / 1024) / 2, 1024 >>> (data, boxSize, leapSize);
-
+        computeBoxForward <<<(n / 1024) / 2, 1024, 0, stream0 >>> (data, boxSize, leapSize);
     }
-    //cudaDeviceSynchronize(); <-- says deprecated in device code
+
+    cudaEvent_t event0;
+    cudaEventCreateWithFlags(&event0, cudaEventBlockingSync);
+    cudaEventRecord(event0, stream0);
+    cudaStreamWaitEvent(stream0, event0, 0);
+    cudaStreamDestroy(stream0);
 }
 
 #include<vector>
@@ -226,21 +233,43 @@ __global__ void bitonicSort(float* __restrict__ data)
 void test2()
 {
     float* dvc;
-    cudaMalloc<float>(&dvc, n * sizeof(float));
-    std::vector<float> hst(n);
+    cudaMalloc(&dvc, n * sizeof(float));
+
+    float* hst;
+    auto cerr = cudaHostAlloc(&hst, n * sizeof(float), cudaHostAllocDefault);
+    std::cout << cerr << std::endl;
+ 
     for (int i = 0; i < n; i++)
-    {
         hst[i] = n - i;
+  
+    cudaStream_t stream0;
+    cudaStreamCreate(&stream0);
+
+    cudaEvent_t evt,evt2;
+
+    cudaEventCreate(&evt);
+    cudaEventCreate(&evt2);
+
+    cudaEventRecord(evt, stream0);
+    
+    for (int i = 0; i < 10; i++)
+    {
+
+        cudaMemcpyAsync(dvc, hst, n * sizeof(float), ::cudaMemcpyHostToDevice, stream0);
+        bitonicSort <<<1, 1,0, stream0 >>> (dvc);
+        cudaMemcpyAsync(hst, dvc, n * sizeof(float), ::cudaMemcpyDeviceToHost, stream0);
     }
-    cudaMemcpy(dvc, hst.data(), n * sizeof(float), ::cudaMemcpyHostToDevice);
-    bitonicSort <<<1, 1 >>> (dvc);
-    cudaDeviceSynchronize();
-    bitonicSort <<<1, 1 >>> (dvc);
-    cudaDeviceSynchronize();
-    bitonicSort <<<1, 1 >>> (dvc);
-    cudaDeviceSynchronize();
-    cudaMemcpy(hst.data(), dvc, n * sizeof(float), ::cudaMemcpyDeviceToHost);
-    std::cout << hst[100] << std::endl;
+    
+    cudaEventRecord(evt2, stream0);
+    cudaEventSynchronize(evt2);
+    float tim;
+    cudaEventElapsedTime(&tim, evt, evt2);
+
+    std::cout << hst[100]<<"  "<<tim<< std::endl;
+    
+    cudaFreeHost(hst);
+    cudaFree(dvc);
+    
 }
 
 int main()

@@ -6,28 +6,28 @@
     // benchmark data:
     
     /*
-    Array elements  GT1030		    std::sort 	        GTX1080ti            RTX4070(from nsight-compute profiler) 
-                    (benchmark)   (1 core )             (guesstimate)
-                    (no overclock)
-    1024            not applicable                            -
-    2048		    not applicable				      -
-    4096		    not applicable				      -
-    8192		    363	    µs		  114 µs		      -
-    16k			    463	    ms		  248 µs		      -
-    32k			    746 	µs		  536	µs		      -
-    64k			    1.23	ms		  1.15ms		      -
-    128k		    2.32	ms		  2.46ms		      -
-    256k		    4.87	ms		  5.4	ms		~1.5+ 0.3	ms
-    512k		    8.72	ms		  11.7ms		~3	+ 0.5	ms
-    1M			    18.3	ms		  22	ms		~6  + 1.2	ms
-    2M			    39      ms		  48	ms		~12 + 2.7	ms
-    4M			    86      ms		  101 ms		~23 + 6.3	ms
-    8M			    187	    ms		  211 ms		~47 + 14	ms
-    16M			    407	    ms		  451 ms		~95 + 32	ms
-    32M			    883	    ms		  940	ms		~190+ 70	ms
-    64M			    1.93	s		  2.0 s		    ~380+ 150	ms            135 ms kernel -- 75% of max VRAM bandwidth is used (364GB/s) 
+    Array elements  	GT1030		    		std::sort 	        GTX1080ti            		RTX4070(from nsight-compute profiler) 
+			(benchmark)   			(1 core )             (guesstimate)
+			(no overclock)
+    1024		not applicable                  -
+    2048		not applicable			-
+    4096		not applicable			-
+    8192		363 µs		  		114  µs		      -
+    16k			463 us		  		248  µs		      -
+    32k			746 us		 		536  µs		      -
+    64k			1.23 ms		  		1.15 ms		      -
+    128k		2.32 ms		  		2.46 ms		      -
+    256k		4.87 ms		 		5.4  ms			~1.5+ 0.3	ms
+    512k		8.72 ms		  		11.7 ms			~3	+ 0.5	ms
+    1M			18.3 ms		  		22   ms			~6  + 1.2	ms
+    2M			39 ms		  		48   ms			~12 + 2.7	ms
+    4M			86 ms		  		101  ms			~23 + 6.3	ms
+    8M			187 ms		  		211  ms			~47 + 14	ms
+    16M			407 ms		  		451  ms			~95 + 32	ms
+    32M			883 ms		  		940  ms			~190+ 70	ms
+    64M			1.93 s		  		2.0  s		    	~380+ 150	ms            135 ms kernel -- 75% of max VRAM bandwidth is used (364GB/s) 
     (float keys)    (copy+kernel )			(copy + kernel)
-                                            (using same pcie)
+
     pcie v2.0 4x: 1.4GB/s
     fx8150 @ 3.6GHz
     4GB RAM 1333MHz

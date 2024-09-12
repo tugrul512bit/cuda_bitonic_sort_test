@@ -34,6 +34,7 @@
     4GB RAM 1333MHz
     (single channel DDR3)
     */
+
 #ifndef __CUDACC__
 #define __CUDACC__
 #endif
@@ -242,6 +243,8 @@ void test2()
     for (int i = 0; i < n; i++)
         hst[i] = n - i;
   
+    std::cout << "sorting 64M elements in gpu with a single kernel call...10 times" << std::endl;
+
     cudaStream_t stream0;
     cudaStreamCreate(&stream0);
 
@@ -265,7 +268,7 @@ void test2()
     float tim;
     cudaEventElapsedTime(&tim, evt, evt2);
 
-    std::cout << hst[100]<<"  "<<tim<< std::endl;
+    std::cout <<"expecting 101 = " << hst[100] << ",  time elapsed for 10 iterations of copy->sort->copy:" << tim<<" milliseconds ("<<tim/10.0f<<" ms per iteration)" << std::endl;
     
     cudaFreeHost(hst);
     cudaFree(dvc);

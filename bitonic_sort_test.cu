@@ -234,6 +234,11 @@ void test2()
     }
     cudaMemcpy(dvc, hst.data(), n * sizeof(float), ::cudaMemcpyHostToDevice);
     bitonicSort <<<1, 1 >>> (dvc);
+    cudaDeviceSynchronize();
+    bitonicSort <<<1, 1 >>> (dvc);
+    cudaDeviceSynchronize();
+    bitonicSort <<<1, 1 >>> (dvc);
+    cudaDeviceSynchronize();
     cudaMemcpy(hst.data(), dvc, n * sizeof(float), ::cudaMemcpyDeviceToHost);
     std::cout << hst[100] << std::endl;
 }

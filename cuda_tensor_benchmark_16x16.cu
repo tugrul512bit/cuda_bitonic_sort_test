@@ -1,3 +1,5 @@
+// 114 TFLOPS for rtx4070
+
 #ifndef __CUDACC__
 #define __CUDACC__
 #endif

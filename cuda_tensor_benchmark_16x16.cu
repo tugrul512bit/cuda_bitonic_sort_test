@@ -44,7 +44,7 @@ __global__ void matrixMul(
     }
     __syncthreads();
 
-    nvcuda::wmma::load_matrix_sync(a_frag, sA, lda);
+    nvcuda::wmma::load_matrix_sync(a_frag, sA + (indexWarp & 31)*16*16, lda);
     nvcuda::wmma::load_matrix_sync(b_frag, sB, ldb);
 
     // all warp threads need to execute this

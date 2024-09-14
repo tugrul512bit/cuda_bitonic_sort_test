@@ -1,4 +1,3 @@
-// rtx4070: 112 TFLOPS (FP16)
 #ifndef __CUDACC__
 #define __CUDACC__
 #endif
@@ -18,8 +17,7 @@ __global__ void matrixMul(
     const int indexWarp = (threadIdx.x + blockIdx.x * blockDim.x)/warpSize;
     const int indexBlock = blockIdx.x;
     const int indexThread = threadIdx.x;
-    cudaStream_t stream0;
-    cudaStreamCreateWithFlags(&stream0, cudaStreamNonBlocking);
+
     constexpr int WMMA_M = 16;
     constexpr int WMMA_N = 16;
     constexpr int WMMA_K = 16;

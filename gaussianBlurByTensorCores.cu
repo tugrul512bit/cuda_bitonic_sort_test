@@ -1,6 +1,4 @@
-// 220 milliseconds for generating 16000 images from 1 image (16 different gaussian blur patterns for 1000 times)
-// this is equivalent to 13.7 microseconds per image (1024x1024)
-// note: not finished yet. half of output is empty or opencv bugs when too many windows are created
+// 220 ms time for generating 16000 images of resolution 1024x1024
 
 // tensor-core gaussian-blur for generating 16 different gaussian blurred pixels of an image at once
 // for example, input is an image, output is 16 images each with a different blur strength
@@ -62,7 +60,7 @@ __global__ void superGaussPipeline(
     const int indexTile = (indexTileX*tileSize - 1) + (indexTileY * tileSize - 1) * imageSize;
     const int stepsRequired = 1 + (tileAccessPixels / warpSize);
 
-    alignas(64)
+    alignas(128)
     __shared__ half alignedAccess[256];
     // 6x6 pixels (to compute closest neighbor based Gaussian Blur for 4x4 interior pixels)
 
@@ -75,14 +73,15 @@ __global__ void superGaussPipeline(
     {
         if (indexLane < tileAccessSize)
         {
-            tileAccess[i * tileAccessSize + indexLane] =  image[indexTile + i * imageSize + indexLane];
+            tileAccess[ i * tileAccessSize  + indexLane] =                 
+                image[  i * imageSize       + indexLane + indexTile];
         }
     }
     __syncthreads();
     
     // map neighbor pixel data (9 per pixel) to tensor core matrix row (each row = neighbors of a pixel, half of elements are zero)
     // map gaussian multipliers to tensor core matrix row
-    nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, 16, 16, 16, half, nvcuda::wmma::col_major> neighborPixels;
+    nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, 16, 16, 16, half, nvcuda::wmma::row_major> neighborPixels;
     nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, 16, 16, 16, half, nvcuda::wmma::col_major> gaussian;
     nvcuda::wmma::fragment<nvcuda::wmma::accumulator, 16, 16, 16, half> result;
     // mapping
@@ -114,7 +113,7 @@ __global__ void superGaussPipeline(
     nvcuda::wmma::load_matrix_sync(neighborPixels, alignedAccess, 16);
 
 
-    // also load 16 different gaussian blur multiplier sets (1 per row, 9 elements filled, rest are zeroed) are loaded
+    // also load 16 different gaussian blur multiplier sets (1 per row, 9 elements filled, rest are zeroed) 
     nvcuda::wmma::load_matrix_sync(gaussian, gaussianMultipliers, 16);
     
     // initialize results to zero
@@ -127,24 +126,27 @@ __global__ void superGaussPipeline(
     __syncthreads();
     
     // store results back to shared memory
-    nvcuda::wmma::store_matrix_sync(alignedAccess, result, 16, nvcuda::wmma::mem_col_major);
+    nvcuda::wmma::store_matrix_sync(alignedAccess, result, 16, nvcuda::wmma::mem_row_major);
    
     __syncthreads(); // because shared memory was written?
     
     // distribute the result to 16 images each having a different gaussian blur strength/pattern
-    if (indexLane < 16)
+    if (indexLane < tileSize)
     {
         const int resultSubTileX = indexLane & (tileSize - 1);
         const int resultSubTileY = indexLane / tileSize;
 
-        // iterate output images
-        
+        // iterate output images        
         for (int i = 0; i < 16; i++)
-            outputImages[   i * imagePixels +
-                            (indexTileX * tileSize + resultSubTileX) +
-                            (indexTileY * tileSize + resultSubTileY) * imageSize]  // i iterates gauss version, tileX & tileY iterate 4x4 pixels of tile
-            =             
-            alignedAccess[i + indexLane*16]; // i iterates gauss version, indexLane iterates pixel
+        {
+            // iterate rows of pixels
+            for (int k = 0; k < tileSize; k++)
+            {
+                outputImages[i * imagePixels + (indexTile + 1 + imageSize) + indexLane + k*imageSize]  // i iterates gauss version, tileX & tileY iterate 4x4 pixels of tile
+                    =
+                    alignedAccess[i + (k * tileSize + indexLane) * 16]; // i iterates gauss version, indexLane iterates pixel
+            }
+        }
     }
 }
 
@@ -155,9 +157,8 @@ __global__ void superGaussPipeline(
 void test()
 {
    
-    auto img0 = cv::imread("test.jpg",cv::ImreadModes::IMREAD_COLOR);
-    cv::Mat img;
-    cv::cvtColor(img0,img, cv::COLOR_BGR2GRAY);
+    auto img = cv::imread("test.jpg",cv::ImreadModes::IMREAD_GRAYSCALE);
+    
     cv::namedWindow("input");
     cv::resizeWindow("input", cv::Size2i(1024, 1024));
     cv::imshow("input", img);
@@ -181,27 +182,30 @@ void test()
     cudaHostAlloc(&hstB, gaussN, cudaHostAllocDefault);
     cudaHostAlloc(&hstC, outputN, cudaHostAllocDefault);
 
+    // input image, normalized grayscale
     for (int i = 0; i < imagePixels; i++)
-        hstA[i] = img.at<uchar>(i)/256.0f;
+        hstA[i] = img.at<uchar>(i) / 256.0f;
 
-    for (int i = 0; i < 16 * 16; i++)
+    // gaussian blur coefficients (sum=16)
+    // all same for now for simplicity
+    for (int i = 0; i < 16; i++)
     {
         hstB[i * 16] = 1;
-        hstB[i * 16 + 1] = 2;
+        hstB[i * 16 + 1] = 1;
         hstB[i * 16 + 2] = 1;
-        hstB[i * 16 + 3] = 2;
-        hstB[i * 16 + 4] = 4;
-        hstB[i * 16 + 5] = 2;
+        hstB[i * 16 + 3] = 1;
+        hstB[i * 16 + 4] = 8;
+        hstB[i * 16 + 5] = 1;
         hstB[i * 16 + 6] = 1;
-        hstB[i * 16 + 7] = 2;
+        hstB[i * 16 + 7] = 1;
         hstB[i * 16 + 8] = 1;
-        hstB[i * 16 + 9] = 0.0f; 
-        hstB[i * 16 + 10] = 0.0f;
-        hstB[i * 16 + 11] = 0.0f;
-        hstB[i * 16 + 12] = 0.0f;
-        hstB[i * 16 + 13] = 0.0f;
-        hstB[i * 16 + 14] = 0.0f;
-        hstB[i * 16 + 15] = 0.0f;
+        hstB[i * 16 + 9] = 0; 
+        hstB[i * 16 + 10] = 0;
+        hstB[i * 16 + 11] = 0;
+        hstB[i * 16 + 12] = 0;
+        hstB[i * 16 + 13] = 0;
+        hstB[i * 16 + 14] = 0;
+        hstB[i * 16 + 15] = 0;
     }
     // read image by opencv
     std::cout << "tensor blur" << std::endl;
@@ -250,12 +254,12 @@ void test()
     for (int k = 0; k < 16; k++)
     {
         for (int i = 0; i < imagePixels; i++)
-            img.at<uchar>(i) = (((float)hstC[i+k*imagePixels]) / 16.0f) * 256;
-        cv::waitKey(100);
+            img.at<uchar>(i) = (((float)hstC[i+k*imagePixels]) / 16.0f)*256.0f;
+        
         cv::namedWindow(std::string("output") + std::to_string(k));
         cv::resizeWindow(std::string("output") + std::to_string(k), cv::Size2i(1024, 1024));
         cv::imshow(std::string("output") + std::to_string(k), img);
-
+        cv::waitKey(100);
     }
     while (cv::waitKey() != 27)
     {
@@ -263,7 +267,11 @@ void test()
     }
     cv::destroyAllWindows();
     cudaFreeHost(hstA);
+    cudaFreeHost(hstB);
+    cudaFreeHost(hstC);
     cudaFree(dvcA);
+    cudaFree(dvcB);
+    cudaFree(dvcC);
 
 }
 

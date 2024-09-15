@@ -1,5 +1,4 @@
 // 220 ms time for generating 16000 images of resolution 1024x1024
-
 // tensor-core gaussian-blur for generating 16 different gaussian blurred pixels of an image at once
 // for example, input is an image, output is 16 images each with a different blur strength
 // tensor matrix-A row is 1 pixel's neighbor pixel data
@@ -162,10 +161,7 @@ void test()
     cv::namedWindow("input");
     cv::resizeWindow("input", cv::Size2i(1024, 1024));
     cv::imshow("input", img);
-    while (cv::waitKey() != 27)
-    {
-        
-    }
+ 
     
 
     // elements for 1M matrices of size 16x16
@@ -190,15 +186,15 @@ void test()
     // all same for now for simplicity
     for (int i = 0; i < 16; i++)
     {
-        hstB[i * 16] = 1;
-        hstB[i * 16 + 1] = 1;
-        hstB[i * 16 + 2] = 1;
-        hstB[i * 16 + 3] = 1;
-        hstB[i * 16 + 4] = 8;
-        hstB[i * 16 + 5] = 1;
-        hstB[i * 16 + 6] = 1;
-        hstB[i * 16 + 7] = 1;
-        hstB[i * 16 + 8] = 1;
+        hstB[i * 16    ] = 1+i/16.0f;
+        hstB[i * 16 + 1] = 2 + i / 8.0f;
+        hstB[i * 16 + 2] = 1 + i / 16.0f;
+        hstB[i * 16 + 3] = 2 + i / 8.0f;
+        hstB[i * 16 + 4] = (8); // center of gauss curve (3x3)
+        hstB[i * 16 + 5] = 2 + i / 8.0f;
+        hstB[i * 16 + 6] = 1 + i / 16.0f;
+        hstB[i * 16 + 7] = 2 + i / 8.0f;
+        hstB[i * 16 + 8] = 1 + i / 16.0f;
         hstB[i * 16 + 9] = 0; 
         hstB[i * 16 + 10] = 0;
         hstB[i * 16 + 11] = 0;
@@ -251,20 +247,19 @@ void test()
     
     // opencv display images
     // division by 16 for normalization
-    for (int k = 0; k < 16; k++)
+    cv::namedWindow(std::string("output"));
+    cv::resizeWindow(std::string("output"), cv::Size2i(1024, 1024));
+    int frame = 0;
+    while (cv::waitKey(200) != 27)
     {
+        frame++;
+        if (frame == 16)
+            frame = 0;
         for (int i = 0; i < imagePixels; i++)
-            img.at<uchar>(i) = (((float)hstC[i+k*imagePixels]) / 16.0f)*256.0f;
-        
-        cv::namedWindow(std::string("output") + std::to_string(k));
-        cv::resizeWindow(std::string("output") + std::to_string(k), cv::Size2i(1024, 1024));
-        cv::imshow(std::string("output") + std::to_string(k), img);
-        cv::waitKey(100);
+            img.at<uchar>(i) = (((float)hstC[i + frame * imagePixels]) / 10.0f) * 256.0f;
+        cv::imshow(std::string("output"), img);
     }
-    while (cv::waitKey() != 27)
-    {
-
-    }
+ 
     cv::destroyAllWindows();
     cudaFreeHost(hstA);
     cudaFreeHost(hstB);

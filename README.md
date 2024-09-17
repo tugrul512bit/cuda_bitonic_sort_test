@@ -9,7 +9,7 @@ Written for this pattern(from wikipedia):
     
 benchmark data:
 
-    Array elements  GT1030          std::sort           GTX1080ti 
+    Array elements  GT1030          std::sort           GTX1080ti            RTX4070
                     (benchmark)     (1 core )           (guesstimate)
                     (no overclock)
     1024            not applicable                      -
@@ -28,7 +28,7 @@ benchmark data:
     8M              187     ms      211     ms      ~47 + 14	ms
     16M             407     ms      451     ms      ~95 + 32	ms
     32M             883     ms      940     ms      ~190+ 70	ms
-    64M             1.93    s       2.0     s       ~380+ 150	ms
+    64M             1.93    s       2.0     s       ~380+ 150	ms            119ms kernel + 21ms buffer copy
     (float keys)    (copy+kernel )                  (copy + kernel)
                                             (using same pcie)
     pcie v2.0 4x: 1.4GB/s

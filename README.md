@@ -40,3 +40,12 @@ benchmark data:
     
 # Quicksort Algorithm In GPU
 
+CUDA-based quicksort algorithm starts with 1 block then gradually increases number of blocks in-flight, then decreases rapidly while finding the solution. 
+
+![not very efficient quicksort](https://github.com/tugrul512bit/cuda_bitonic_sort_test/blob/master/Ekran%20g%C3%B6r%C3%BCnt%C3%BCs%C3%BC%202024-09-20%20013324.png)
+
+When multiple quicksort algorithm run in parallel, GPU is able to overlap them partially to keep SM units busy.
+
+![more efficient quicksort](https://github.com/tugrul512bit/cuda_bitonic_sort_test/blob/master/Ekran%20g%C3%B6r%C3%BCnt%C3%BCs%C3%BC%202024-09-20%20012409.png)
+
+This is what quicksort-pipeline.cu is doing. It is sorting 15 arrays (8M elements each) with 3 concurrency.

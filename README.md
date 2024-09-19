@@ -1,3 +1,5 @@
+# Bitonic Sorting Algorithm In GPU
+
 Written for this pattern(from wikipedia):
 
 ![bitonic sort](https://raw.githubusercontent.com/tugrul512bit/cuda_bitonic_sort_test/master/BitonicSort1.svg.png)
@@ -36,3 +38,5 @@ benchmark data:
     4GB RAM 1333MHz
     (single channel DDR3)
     
+# Quicksort Algorithm In GPU
+

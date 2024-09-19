@@ -1,7 +1,7 @@
-// hybrid quicksort (20 milliseconds for 4M elements inside RTX4070)
-// when chunk size is greater than 128, it does a quicksort step
-// continue splitting chunks
-// when chunk size is 128 or less, execute odd-even sort (brute force parallel bubble-sort)
+// hybrid quicksort (16 milliseconds for 4M elements inside RTX4070)
+// when chunk size is greater than 1024, it does quicksort steps
+// continues splitting chunks
+// when chunk size is 1024 or less, executes parallel odd-even sort
 
 #ifndef __CUDACC__
 #define __CUDACC__
@@ -104,10 +104,10 @@ __global__ void quickSortWithoutStreamCompaction(
     int right = 0;
     unsigned int pivot = arr[stopIncluded];
 
-    // if chunk size is 128 or less, do brute-force sorting
-    __shared__ unsigned int cache[128];
+    // if chunk size is 1024 or less, do brute-force sorting
+    __shared__ unsigned int cache[1024];
 
-    if (num <= 128)
+    if (num <= 1024)
     {
         if (id ==0)
         {
@@ -121,42 +121,44 @@ __global__ void quickSortWithoutStreamCompaction(
         }
     }
     __syncthreads();
-    if (num <= 128)
+    if (num <= 1024)
     {
-
-        if (id < num/2)
+        for (int i = 0; i < num; i++)
         {
-            // odd-even parallel sort
-            for (int i = 0; i < num ; i++)
+            if (id < num / 2)
             {
+                // odd-even parallel sort
+
+
                 if (i & 1) // odd
                 {
                     if (id * 2 + 1 < num)
-                    if (cache[id*2+1] < cache[id*2])
-                    {
-                        unsigned int tmp = cache[id * 2];
-                        cache[id * 2] = cache[id * 2 + 1];
-                        cache[id * 2 + 1] = tmp;
+                        if (cache[id * 2 + 1] < cache[id * 2])
+                        {
+                            unsigned int tmp = cache[id * 2];
+                            cache[id * 2] = cache[id * 2 + 1];
+                            cache[id * 2 + 1] = tmp;
 
-                    }
+                        }
                 }
                 else // even
                 {
-                    if(id * 2 + 2<num)
-                    if (cache[id * 2 + 2] < cache[id * 2+1])
-                    {
-                        unsigned int tmp = cache[id * 2+1];
-                        cache[id * 2+1] = cache[id * 2 + 2];
-                        cache[id * 2 + 2] = tmp;
+                    if (id * 2 + 2 < num)
+                        if (cache[id * 2 + 2] < cache[id * 2 + 1])
+                        {
+                            unsigned int tmp = cache[id * 2 + 1];
+                            cache[id * 2 + 1] = cache[id * 2 + 2];
+                            cache[id * 2 + 2] = tmp;
 
-                    }
+                        }
                 }
-
             }
+
+            __syncthreads();
         }
     }
-    __syncthreads();
-    if (num <= 128)
+    
+    if (num <= 1024)
     {
         if (id == 0)
         {
@@ -165,7 +167,7 @@ __global__ void quickSortWithoutStreamCompaction(
 
         }
     }
-    if (num <= 128)
+    if (num <= 1024)
         return;
 
     __shared__ int indexLeft;

@@ -1,8 +1,11 @@
+// each kernel is single-block and computes a chunk currently (starting chunk = whole array)
 // when a chunk has more than 64 elements, it does a step of quicksort
 // after many steps, chunks get smaller, 
 // when 64 or less sized, they are sorted in brute-force algorithm (odd-even parallel sort, not even optimized)
 // this reduces number of launched kernels from ~1M to 60k. This improves performance 15x-20x compared to pure-quicksort.
-
+// todo: insert child kernel parameters into an array
+//          then launch single kernel with multiple blocks, to compute with 1 block per child kernel parameter
+//          expected speedup=2^nDepth on kernel-launch-overhead
 
 #ifndef __CUDACC__
 #define __CUDACC__
@@ -189,7 +192,7 @@ __global__ void quickSortWithoutStreamCompaction(unsigned int* arr, unsigned int
 
 void test()
 {
-    constexpr int n = 1024 * 1024;
+    constexpr int n = 1024 * 32;
     unsigned int *data, *left, * right,*numKernels;
     std::vector<unsigned int> hostData(n);
     cudaMalloc(&data, n * sizeof(unsigned int));

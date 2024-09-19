@@ -48,4 +48,8 @@ When multiple quicksort algorithm run in parallel, GPU is able to overlap them p
 
 ![more efficient quicksort](https://github.com/tugrul512bit/cuda_bitonic_sort_test/blob/master/Ekran%20g%C3%B6r%C3%BCnt%C3%BCs%C3%BC%202024-09-20%20012409.png)
 
-This is what quicksort-pipeline.cu is doing. It is sorting 15 arrays (8M elements each) with 3 concurrency.
+Profiler image above is what quicksort-pipeline.cu is doing. It is sorting 15 arrays (8M elements each) with 3 concurrency.
+
+When concurrency is increased to 10, it overlaps even more:
+![very efficient quicksort](https://github.com/tugrul512bit/cuda_bitonic_sort_test/blob/master/Ekran%20g%C3%B6r%C3%BCnt%C3%BCs%C3%BC%202024-09-20%20021143.png)
+

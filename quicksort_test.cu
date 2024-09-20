@@ -105,12 +105,17 @@ __global__ void quickSortWithoutStreamCompaction(
             {
                 const auto data = arr[curId + startIncluded];
                 if (data < pivot)
-                    leftMem[startIncluded + atomicAdd(&indexLeft, 1)] = data;
+                    leftMem[startIncluded + atomicAdd(&indexLeft[0], 1)] = data;
                 else
-                    rightMem[startIncluded + atomicAdd(&indexRight, 1)] = data;
+                {
+                    if (curId + startIncluded != stopIncluded)
+                    {
+                        rightMem[startIncluded + atomicAdd(&indexRight[0], 1)] = data;
+                    }
+                }
             }
         }
-    } 
+    }
     __syncthreads();
     indexLeftR = indexLeft;
     indexRightR = indexRight;

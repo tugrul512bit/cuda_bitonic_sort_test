@@ -160,7 +160,6 @@ __global__ void quickSortWithoutStreamCompaction(
         indexRight = 0;
     }
     __syncthreads();
-
     {
         const int steps = (num / bd) + 1;
         for (int i = 0; i < steps; i++)
@@ -170,9 +169,14 @@ __global__ void quickSortWithoutStreamCompaction(
             {
                 const auto data = arr[curId + startIncluded];
                 if (data < pivot)
-                    leftMem[startIncluded + atomicAdd(&indexLeft, 1)] = data;
+                    leftMem[startIncluded + atomicAdd(&indexLeft[0], 1)] = data;
                 else
-                    rightMem[startIncluded + atomicAdd(&indexRight, 1)] = data;
+                {
+                    if (curId + startIncluded != stopIncluded)
+                    {
+                        rightMem[startIncluded + atomicAdd(&indexRight[0], 1)] = data;
+                    }
+                }
             }
         }
     }
@@ -191,30 +195,22 @@ __global__ void quickSortWithoutStreamCompaction(
             }
         }
     }
-
+    if (id == 0)
+    {
+        arr[startIncluded + indexLeftR] = pivot;
+    }
     if (indexRightR > 0)
     {
         const int steps = (indexRightR / bd) + 1;
         for (int i = 0; i < steps; i++)
         {
             const int curId = i * bd + id;
-            if (curId < indexRightR)
+            if (curId + indexLeftR + startIncluded + 1 <= stopIncluded)
             {
-                arr[curId + indexLeftR + startIncluded] = rightMem[startIncluded + curId];
+                arr[curId + indexLeftR + startIncluded+1] = rightMem[startIncluded + curId];
             }
         }
     }
-
-    __syncthreads();
-
-    if (id == 0)
-    {
-
-        auto tmp = arr[indexLeftR + startIncluded];
-        arr[stopIncluded] = tmp;
-        arr[indexLeftR + startIncluded] = pivot;
-    }
-
     __syncthreads();
     auto nLeft = indexLeftR;
     auto nRight = indexRightR;

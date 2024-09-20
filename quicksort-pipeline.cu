@@ -72,8 +72,6 @@ __global__ void quickSortWithoutStreamCompaction(
     const int gid = blockIdx.x;
     const int id = threadIdx.x;
 
-    if (id == 0 && gid == 0)
-        copyTasksBack << <1, 1024, 0, cudaStreamTailLaunch >> > (arr, leftMem, rightMem, depth, numTasks, tasks, tasks2);
 
     const int startIncluded = tasks[gid * 2];
     const int stopIncluded = tasks[gid * 2 + 1];
@@ -241,6 +239,8 @@ __global__ void quickSortWithoutStreamCompaction(
         }
     }
 
+    if (id == 0 && gid == 0)
+        copyTasksBack << <1, 1024, 0, cudaStreamTailLaunch >> > (arr, leftMem, rightMem, depth, numTasks, tasks, tasks2);
 
 }
 

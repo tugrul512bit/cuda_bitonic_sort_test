@@ -109,15 +109,9 @@ __global__ void quickSortWithoutStreamCompaction(
 
     if (num <= 1024)
     {
-        if (id ==0)
+        if (id < num)
         {
-          
-            for (int i = 0; i < num; i++)
-            {
-                cache[i] = arr[startIncluded + i];
-               
-            }
-         
+            cache[id] = arr[startIncluded + id];
         }
     }
     __syncthreads();
@@ -125,46 +119,30 @@ __global__ void quickSortWithoutStreamCompaction(
     {
         for (int i = 0; i < num; i++)
         {
-            if (id < num / 2)
-            {
-                // odd-even parallel sort
-
-
-                if (i & 1) // odd
+            if (id + 1 < num && (id % 2 == 0))
+                if (cache[id+1] < cache[id])
                 {
-                    if (id * 2 + 1 < num)
-                        if (cache[id * 2 + 1] < cache[id * 2])
-                        {
-                            unsigned int tmp = cache[id * 2];
-                            cache[id * 2] = cache[id * 2 + 1];
-                            cache[id * 2 + 1] = tmp;
-
-                        }
+                    unsigned int tmp = cache[id+1];
+                    cache[id+1] = cache[id];
+                    cache[id] = tmp;
                 }
-                else // even
-                {
-                    if (id * 2 + 2 < num)
-                        if (cache[id * 2 + 2] < cache[id * 2 + 1])
-                        {
-                            unsigned int tmp = cache[id * 2 + 1];
-                            cache[id * 2 + 1] = cache[id * 2 + 2];
-                            cache[id * 2 + 2] = tmp;
-
-                        }
-                }
-            }
-
             __syncthreads();
+            if (id + 1 < num && !(id % 2 == 0))
+                if (cache[id + 1] < cache[id])
+                {
+                    unsigned int tmp = cache[id + 1];
+                    cache[id + 1] = cache[id];
+                    cache[id] = tmp;
+                }
+            __syncthreads();  
         }
     }
-    
+
     if (num <= 1024)
     {
-        if (id == 0)
+        if (id < num)
         {
-            for (int i = 0; i < num; i++)
-                arr[startIncluded + i] = cache[i];
-
+             arr[startIncluded + id]= cache[id];
         }
     }
     if (num <= 1024)

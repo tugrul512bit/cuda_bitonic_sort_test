@@ -174,7 +174,7 @@ __global__ void quickSortWithoutStreamCompaction(
             }
         }
     } 
-    __syncthreads();
+     __syncthreads();
     indexLeftR = indexLeft;
     indexRightR = indexRight;
     if (indexLeftR > 0)
@@ -189,30 +189,22 @@ __global__ void quickSortWithoutStreamCompaction(
             }
         }
     }
-
+    if (id == 0)
+    {
+        arr[startIncluded + indexLeftR] = pivot;
+    }
     if (indexRightR > 0)
     {
         const int steps = (indexRightR / bd) + 1;
         for (int i = 0; i < steps; i++)
         {
             const int curId = i * bd + id;
-            if (curId < indexRightR)
+            if (curId + indexLeftR + startIncluded + 1 <= stopIncluded)
             {
-                arr[curId + indexLeftR + startIncluded] = rightMem[startIncluded + curId];
+                arr[curId + indexLeftR + startIncluded+1] = rightMem[startIncluded + curId];
             }
         }
     }
-
-    __syncthreads();
- 
-    if (id == 0)
-    {
-
-        auto tmp = arr[indexLeftR + startIncluded];
-        arr[stopIncluded] = tmp;
-        arr[indexLeftR + startIncluded] = pivot;
-    }
-
     __syncthreads();
     auto nLeft = indexLeftR;
     auto nRight = indexRightR;

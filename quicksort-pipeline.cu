@@ -80,7 +80,7 @@ __global__ void quickSortWithoutStreamCompaction(
     const int num = stopIncluded - startIncluded + 1;
 
 
-    if (num <= 0 || num == 1)
+    if (num < 2)
         return;
 
     if (num == 2)

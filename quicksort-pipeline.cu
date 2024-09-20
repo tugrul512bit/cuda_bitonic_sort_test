@@ -122,10 +122,10 @@ __global__ void quickSortWithoutStreamCompaction(
         for (int i = 0; i < num; i++)
         {
             if (id + 1 < num && (id % 2 == 0))
-                if (cache[id+1] < cache[id])
+                if (cache[id + 1] < cache[id])
                 {
-                    unsigned int tmp = cache[id+1];
-                    cache[id+1] = cache[id];
+                    unsigned int tmp = cache[id + 1];
+                    cache[id + 1] = cache[id];
                     cache[id] = tmp;
                 }
             __syncthreads();
@@ -136,7 +136,7 @@ __global__ void quickSortWithoutStreamCompaction(
                     cache[id + 1] = cache[id];
                     cache[id] = tmp;
                 }
-            __syncthreads();  
+            __syncthreads();
         }
     }
 
@@ -144,7 +144,7 @@ __global__ void quickSortWithoutStreamCompaction(
     {
         if (id < num)
         {
-             arr[startIncluded + id]= cache[id];
+            arr[startIncluded + id] = cache[id];
         }
     }
     if (num <= 1024)
@@ -169,12 +169,12 @@ __global__ void quickSortWithoutStreamCompaction(
             {
                 const auto data = arr[curId + startIncluded];
                 if (data < pivot)
-                    leftMem[startIncluded + atomicAdd(&indexLeft[0], 1)] = data;
+                    leftMem[startIncluded + atomicAdd(&indexLeft, 1)] = data;
                 else
                 {
                     if (curId + startIncluded != stopIncluded)
                     {
-                        rightMem[startIncluded + atomicAdd(&indexRight[0], 1)] = data;
+                        rightMem[startIncluded + atomicAdd(&indexRight, 1)] = data;
                     }
                 }
             }
@@ -207,7 +207,7 @@ __global__ void quickSortWithoutStreamCompaction(
             const int curId = i * bd + id;
             if (curId + indexLeftR + startIncluded + 1 <= stopIncluded)
             {
-                arr[curId + indexLeftR + startIncluded+1] = rightMem[startIncluded + curId];
+                arr[curId + indexLeftR + startIncluded + 1] = rightMem[startIncluded + curId];
             }
         }
     }
@@ -268,7 +268,7 @@ __global__ void qSortMain(
 #include<queue>
 #include<condition_variable>
 #include<functional>
-/* 
+/*
     N = number of concurrent sorts
     S = max number of elements per sort
 */
@@ -296,22 +296,22 @@ struct SortingPipeline
         {
             int k = i;
             sorter[i] = std::make_shared<Sorter>(S);
-            threads.emplace_back([&,k](){
+            threads.emplace_back([&, k]() {
                 bool work = true;
                 std::function<void(std::vector<unsigned int>)> callback;
                 while (work)
                 {
                     std::vector<unsigned int> dataToSort;
                     {
-                        std::unique_lock<std::mutex> lck(mut);    
-                        
+                        std::unique_lock<std::mutex> lck(mut);
+
                         cond.notify_all();
-                        cond.wait(lck, [&]() { return msg>0; });   
+                        cond.wait(lck, [&]() { return msg > 0; });
                         work = status;
                         if (msg > 0)
                         {
                             msg--;
-                            
+
                             if (data.size() > 0)
                             {
                                 dataToSort = data.front();
@@ -324,7 +324,7 @@ struct SortingPipeline
 
                     if (dataToSort.size() > 0)
                     {
-                        sorter[k]->Push(dataToSort);     
+                        sorter[k]->Push(dataToSort);
                         sorter[k]->Run();
                         sorter[k]->Pop(dataToSort);
                         callback(dataToSort);
@@ -332,11 +332,11 @@ struct SortingPipeline
                     }
                 }
                 std::cout << "sorter thread shutting down" << std::endl;
-            });
+                });
         }
     }
 
-    void Sort(std::vector<unsigned int> dataToSort,std::function<void(std::vector<unsigned int>)> callback)
+    void Sort(std::vector<unsigned int> dataToSort, std::function<void(std::vector<unsigned int>)> callback)
     {
         std::unique_lock<std::mutex> lck(mut);
         msg++;
@@ -357,12 +357,12 @@ struct SortingPipeline
         while (true)
         {
             std::unique_lock<std::mutex> lck(mut);
-            msg+=N;
-            cond.notify_all(); 
-            cond.wait(lck, [&]() { return available == N; });     
-            
+            msg += N;
+            cond.notify_all();
+            cond.wait(lck, [&]() { return available == N; });
+
             if (available == N)
-                return;            
+                return;
         }
     }
 
@@ -373,7 +373,7 @@ struct SortingPipeline
             status = false;
             msg += N;
         }
-        while(true)
+        while (true)
         {
             std::unique_lock<std::mutex> lck(mut);
             cond.notify_all();
@@ -383,7 +383,7 @@ struct SortingPipeline
         }
         for (int i = 0; i < N; i++)
         {
-            
+
             threads[i].join();
         }
     }
@@ -414,14 +414,14 @@ struct Sorter
         numTasksHost[0] = 1; // launch 1 block first
         numTasksHost[1] = 0;
         hostTasks[0] = 0;
-        hostTasks[1] = hostData.size()-1; // first block's chunk limits: 0 - n-1
+        hostTasks[1] = hostData.size() - 1; // first block's chunk limits: 0 - n-1
         cudaMemcpyAsync((void*)data, hostData.data(), hostData.size() * sizeof(unsigned int), cudaMemcpyHostToDevice, stream);
         cudaMemcpyAsync((void*)numTasks, numTasksHost, 2 * sizeof(unsigned int), cudaMemcpyHostToDevice, stream);
         cudaMemcpyAsync((void*)tasks, hostTasks, 2 * sizeof(int), cudaMemcpyHostToDevice, stream); // host only gives 1 task with 2 parameters
     }
     void Run()
     {
-        qSortMain <<<1, 1,0, stream >>> (data, left, right, 0, numTasks, tasks, tasks2);
+        qSortMain << <1, 1, 0, stream >> > (data, left, right, 0, numTasks, tasks, tasks2);
     }
 
     void Pop(std::vector<unsigned int>& hostData)
@@ -446,8 +446,8 @@ struct Sorter
 // in CUDA GPU (quick-sort algorithm)
 void test()
 {
-    std::shared_ptr<SortingPipeline<3, 1024 * 1024*8>> pipeline = std::make_shared< SortingPipeline<3, 1024 * 1024*8>>();
-    constexpr int n = 1024 * 1024*8;
+    std::shared_ptr<SortingPipeline<3, 1024 * 1024 * 8>> pipeline = std::make_shared< SortingPipeline<3, 1024 * 1024 * 8>>();
+    constexpr int n = 1024 * 1024 * 8;
     for (int j = 0; j < 15; j++)
     {
         std::vector<unsigned int> hostData(n);
@@ -471,11 +471,11 @@ void test()
                     std::cout << "quicksort completed successfully" << std::endl;
                 }
             });
-        
+
     }
 
     pipeline->Wait();
-    
+
 }
 
 int main()

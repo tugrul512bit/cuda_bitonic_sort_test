@@ -2,7 +2,6 @@
 // bugs with driver: 561.09
 // RTX-4070 alone for computing, screen attached to iGPU
 // MSVC 2022 - Nvidia Compiler: compute_89, sm_89
-// cuda-memcheck: no errors
 // compute-sanitizer: no errors
 // when chunk size is greater than 1024, it does quicksort steps
 // continues splitting chunks like: left, middle(just count), right
@@ -39,8 +38,8 @@ __global__ void resetNumTasks( int* numTasks)
     }
 }
 
-__global__ void copyTasksBack( int* arr,  int* leftMem,  int* rightMem,  int* numTasks,
-    int* tasks, int* tasks2, int* tasks3, int* tasks4)
+__global__ void copyTasksBack( int* arr,  int* leftMem,  int* rightMem,  int* __restrict__ numTasks,
+    int* __restrict__ tasks, int* __restrict__ tasks2, int* __restrict__ tasks3, int* __restrict__ tasks4)
 {
     const int id = threadIdx.x;
     const int n = numTasks[0];
@@ -48,12 +47,13 @@ __global__ void copyTasksBack( int* arr,  int* leftMem,  int* rightMem,  int* nu
     const int steps = 1 + n / 1024;
     const int steps2 = 1 + n2 / 1024;
 
+
     // make quick-sort tasks usable
     for (int i = 0; i < steps; i++)
     {
         const int curId = id + i * 1024;
         if (curId < n)
-        {
+        {            
             tasks[curId * 2] = tasks2[curId * 2];
             tasks[curId * 2 + 1] = tasks2[curId * 2 + 1];
         }
@@ -80,11 +80,24 @@ __global__ void bruteSort(int * __restrict__ arr, int* __restrict__ tasks3)
 {
     const int id = threadIdx.x;
     const int gid = blockIdx.x;
-    const int startIncluded = tasks3[gid * 2];
-    const int stopIncluded = tasks3[gid * 2 + 1];
+    __shared__ int taskIdCacheStart;
+    __shared__ int taskIdCacheStop;
+    if (id == 0)
+    {
+        taskIdCacheStart = tasks3[gid * 2];
+        taskIdCacheStop = tasks3[gid * 2 + 1];
+        tasks3[gid * 2] = -1;
+        tasks3[gid * 2 + 1] = -1;
+    }
+    __syncthreads();
+    const int startIncluded = taskIdCacheStart;
+    const int stopIncluded = taskIdCacheStop;
     const int num = stopIncluded - startIncluded + 1;
-
-   
+    if (startIncluded < 0 || stopIncluded < 0)
+    {
+        printf(" brute-force error ");
+        return;
+    }
     
     __shared__ int cache[1024];
     if (startIncluded + id <= stopIncluded)
@@ -134,10 +147,30 @@ __global__ void quickSortWithoutStreamCompaction(
     const int id = threadIdx.x;
 
 
-    const int startIncluded = tasks[gid * 2];
-    const int stopIncluded = tasks[gid * 2 + 1];
+
+
+    __shared__ int taskIdCacheStart;
+    __shared__ int taskIdCacheStop;
+    if (id == 0)
+    {
+        taskIdCacheStart = tasks[gid * 2];
+        taskIdCacheStop = tasks[gid * 2 + 1];
+        tasks[gid * 2] = -1;
+        tasks[gid * 2 + 1] = -1;
+    }
+    __syncthreads();
+    const int startIncluded = taskIdCacheStart;
+    const int stopIncluded = taskIdCacheStop;
     const int num = stopIncluded - startIncluded + 1;
 
+
+    if (startIncluded < 0 || stopIncluded < 0)
+    {
+        if(id==0)
+            printf(" brute-force error ");
+        return;
+    }
+        
     __shared__ int indexLeft;
     __shared__ int indexMid;
     __shared__ int indexRight;
@@ -263,11 +296,21 @@ __global__ void quickSortWithoutStreamCompaction(
     }
 }
 
-
+__global__ void resetTasks(int * tasks, int * tasks2, int * tasks3, int * tasks4, const int n)
+{
+    const int id = threadIdx.x + blockIdx.x * blockDim.x;
+    if (id < n)
+    {
+        tasks[id] = -1;
+        tasks2[id] = -1;
+        tasks3[id] = -1;
+        tasks4[id] = -1;
+    }
+}
 
 void test()
 {
-    constexpr int n = 18000;
+    constexpr int n = 2000;
     int* data, * left, * right, * numTasks;
     int* tasks, * tasks2,*tasks3,*tasks4;
     std::vector< int> hostData(n),backup(n);
@@ -283,7 +326,9 @@ void test()
     gpuErrchk( cudaMalloc(&tasks2, n * sizeof(int)));
     gpuErrchk( cudaMalloc(&tasks3, n * sizeof(int)));
     gpuErrchk( cudaMalloc(&tasks4, n * sizeof(int)));
-
+    resetTasks << <1 + n / 1024, 1024 >> > (tasks, tasks2, tasks3, tasks4, n);
+    gpuErrchk(cudaGetLastError());
+    gpuErrchk(cudaDeviceSynchronize());
 
     int numTasksHost[2];
     int nQuickTask = 1;
@@ -297,6 +342,7 @@ void test()
             backup[i] = hostData[i];
         }
         auto qSort = [&]() {
+
             numTasksHost[0] = 1; // launch 1 block first
             numTasksHost[1] = 0;
             hostTasks[0] = 0;
@@ -306,32 +352,29 @@ void test()
             gpuErrchk(cudaMemcpy((void*)tasks, hostTasks.data(), 2 * sizeof(int), cudaMemcpyHostToDevice)); // host only gives 1 task with 2 parameters
             nQuickTask = 1;
             nBruteTask = 0;
-
+            int ctr = 0;
             while (nQuickTask > 0 || nBruteTask > 0)
             {
 
                 //qSortMain << <1, 1 >> > (data, left, right, 0, numTasks, tasks, tasks2);
                 if (nQuickTask > 0)
-                    quickSortWithoutStreamCompaction << <nQuickTask, 1024 >> > (data, left, right, numTasks, tasks, tasks2, tasks4);
+                    quickSortWithoutStreamCompaction <<<nQuickTask, 1024 >>> (data, left, right, numTasks, tasks, tasks2, tasks4);
                 gpuErrchk(cudaGetLastError());
+             
                 if (nBruteTask > 0)
-                    bruteSort << <nBruteTask, 1024 >> > (data, tasks3);
+                    bruteSort <<<nBruteTask, 1024 >>> (data, tasks3);
                 gpuErrchk(cudaGetLastError());
                 gpuErrchk(cudaDeviceSynchronize());
-
-
-
-
 
                 gpuErrchk(cudaMemcpy(numTasksHost, (void*)numTasks, 2 * sizeof(int), cudaMemcpyDeviceToHost));
                 nQuickTask = numTasksHost[0];
                 nBruteTask = numTasksHost[1];
-
+                std::cout << "n=" << nQuickTask << " m=" << nBruteTask << std::endl;
                 if (nQuickTask > 0 || nBruteTask > 0)
                 {
-                    copyTasksBack << <1, 1024 >> > (data, left, right, numTasks, tasks, tasks2, tasks3, tasks4);
+                    copyTasksBack <<<1, 1024 >>> (data, left, right, numTasks, tasks, tasks2, tasks3, tasks4);
                     gpuErrchk(cudaGetLastError());
-                    resetNumTasks << <1, 1 >> > (numTasks);
+                    resetNumTasks <<<1, 1 >>> (numTasks);
                     gpuErrchk(cudaGetLastError());
                 }
                 else
@@ -339,14 +382,14 @@ void test()
                     break;
                 }
                 gpuErrchk(cudaDeviceSynchronize());
-
+                
 
             }
             gpuErrchk(cudaMemcpy(hostData.data(), (void*)data, n * sizeof(int), cudaMemcpyDeviceToHost));
         };
 
         qSort();
-        bool err = false;
+        bool err = false,err2=false;
         for (int i = 0; i < n - 2; i++)
             if (hostData[i] > hostData[i + 1])
             {
@@ -366,6 +409,7 @@ void test()
                     {
                         std::cout << "Error happened again!" << std::endl;
                         err = true;
+                        
                         break;
                     }
 
@@ -374,11 +418,12 @@ void test()
                     std::cout << "quicksort completed successfully with same input!!!" << std::endl;
                     // for (int i = 0; i < 35; i++)
                      //    std::cout << hostData[i] << " ";
+                    err2 = true;
                 }
                 break;
             }
 
-        if (!err)
+        if (!err && !err2)
         {
             std::cout << "quicksort completed successfully " << j << std::endl;
             // for (int i = 0; i < 35; i++)
